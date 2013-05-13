@@ -1,0 +1,7 @@
+
+typedef void (*vector_func)(void);
+
+int setvect(int offset, vector_func func);
+void enableIRQ(int offset);
+void disableIRQ(int offset);
+int getvect(int offset, vector_func *func) ;

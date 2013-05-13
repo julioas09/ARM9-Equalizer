@@ -1,0 +1,151 @@
+#include <linux/module.h>
+#include <linux/kernel.h>
+#include <linux/init.h>
+#include <linux/fs.h>
+#include <linux/ioport.h>
+#include <asm/io.h>
+
+#define PADDR 0x80840010
+#define PFDDR 0x80840034
+#define PADR 0x80840000
+#define PFDR 0x8084_0030
+
+#define LEDS_MAJOR_NUMBER 73
+
+int 
+reg_open(struct inode *inode, struct file *filp)
+{
+
+	volatile char *padr; // declarar como volatile o como unsigned?
+	volatile char *paddr;
+	volatile char *pfdr;
+	volatile char *pfddr;
+
+	MOD_INC_USE_COUNT; 
+	printk("<1>Opening leds...\n");
+	
+	//comprueba memoria
+	if(check_mem_region(PADDR, 4)) {
+               printk("DUMB: espacio de memoria en uso: PADDR\n");
+               return -EBUSY;
+       }
+	
+
+       if(check_mem_region(PADR, 4)) {
+               printk("DUMB: espacio de memoria en uso: PADR\n");
+               return -EBUSY;
+       }
+	if(check_mem_region(PFDDR, 4)) {
+               printk("DUMB: espacio de memoria en uso: PFDDR\n");
+               return -EBUSY;
+       }
+	
+
+       if(check_mem_region(PFDR, 4)) {
+               printk("DUMB: espacio de memoria en uso: PFDR\n");
+               return -EBUSY;
+       }
+
+
+
+      
+	//Tomar memoria
+
+	 request_mem_region(PADDR, 4, "paddr");
+	 paddr = __ioremap(PADDR, 4, 0);
+
+	 request_mem_region(PADR, 4, "padr");
+	 padr = __ioremap(PADR, 4, 0);
+
+ 	request_mem_region(PFDDR, 4, "pfddr");
+	 pfddr = __ioremap(PFDDR, 4, 0);
+
+	 request_mem_region(PFDR, 4, "pfdr");
+	 pfdr = __ioremap(PFDR, 4, 0);
+
+
+
+	
+
+	 printk("dumb: paddr remap = %p\n", paddr);
+	 printk("dumb: padr remap = %p\n", padr);
+	 printk("dumb: pfddr remap = %p\n", pfddr);
+	 printk("dumb: pfdr remap = %p\n", pfdr);
+	 
+
+	*paddr = 0xFF; // hacer con mascaras?
+	*pfddr = 0x07;
+	
+/**
+  _peddr = inb(0x80840024);
+  _peddr |= 0x03;
+  outb(_peddr, 0x80840024);
+
+  _pedr = inl (0x80840020);
+  _pedr &= (~0xFFFFFFFC);
+  outl (_pedr, 0x80840020);
+**/
+  printk("<1>leds init done\n");
+  
+  return 0;
+}
+
+int 
+reg_release(struct inode *inode, struct file *filep)
+{ 
+  MOD_DEC_USE_COUNT;   
+  printk("<1>Closing leds\n");
+  return 0;
+}
+
+ssize_t 
+reg_read(struct file *filep, char *buf, size_t count, loff_t *f_pos)
+{
+  return 0;
+}
+
+ssize_t 
+reg_write(struct file *filep, const char *buf, size_t count, loff_t *f_pos)
+{
+  unsigned char _pedr;
+
+  _pedr = (*buf) & 0x03;  
+  outb (_pedr, 0x80840020);
+  printk("<1>Write 0x%02X to LEDs\n", _pedr);
+
+  return 1;
+}
+
+struct file_operations reg_fops = {
+        read: reg_read,
+        write: reg_write,
+        open: reg_open,
+        release: reg_release
+};
+
+int my_init(void){
+  int result;
+
+  printk("<1>Good LEDs!\n");
+  result = register_chrdev(LEDS_MAJOR_NUMBER, "leds", &reg_fops);
+  if(result<0){
+    printk("<1>Fail major number %d\n", LEDS_MAJOR_NUMBER);
+    return result;
+  }
+  
+  //check_region(REG_ADDR, 1);
+  printk("<1>Register!!!\n");
+  return 0;
+}
+
+void my_end(void) {
+  //Free major number
+  unregister_chrdev(LEDS_MAJOR_NUMBER, "leds");
+        
+  //Unlock access to register
+  //release_region(REG_ADDR, 1);
+  printk("<1>Bye bye!");
+}
+
+module_init(my_init);
+module_exit(my_end);

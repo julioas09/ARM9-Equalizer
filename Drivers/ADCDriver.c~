@@ -1,0 +1,246 @@
+//------------------------------------------------------------------------------
+// Tutorial del driver del ADC del microcontrolador ARM920T.
+//
+// Define y configura las funciones del driver.
+//   
+// Autores: María del Pino Ruiz de Toledo Gutiérrez del Álamo y Julio Alberto Seijas Diego
+//------------------------------------------------------------------------------
+
+
+
+#include <linux/module.h>
+#include <linux/kernel.h>
+#include <linux/init.h>
+#include <linux/fs.h>
+#include <linux/ioport.h>
+#include <asm/io.h>
+
+#define SYS_SW_LOCK 0x809300C0   //para desbloquear registros del sistema
+#define ADC_CLK_DIV 0x80930090   //para el reloj del ADC
+#define DEVICE_CFG 0x80930080    //configurar dispositivos
+#define ADC_RESULT 0x80900008   // lectura
+#define ADC_SWITCH 0x80900018  //selecciona entrada
+#define ADC_SW_LOCK 0x80900020  //para desbloquear registros ADC
+//#define ADC_INT_EN 0x80900024  // para activar las interrupciones procedentes del adc
+
+#define ADC_MAJOR_NUMBER 70
+MODULE_LICENSE("GPL");
+
+ volatile char *sys_sw_lock;
+ volatile char *adc_clk_div;
+ volatile char *device_cfg;
+ volatile char *adc_result;
+ volatile char *adc_switch;
+ volatile char *adc_sw_lock;
+
+//------------------------------------------------------
+// int reg_open(struct inode *inode, struct file *filp)
+//
+// Descripción:
+// 	Función para abrir e inicializar	
+//	 
+//------------------------------------------------------
+int 
+reg_open(struct inode *inode, struct file *filp)
+{
+	MOD_INC_USE_COUNT;  //para "decir" que lo estoy usando
+	printk("<1>Opening adc...\n");
+	
+//comprobar disponibilidad de memoria
+
+ 	if(check_mem_region(SYS_SW_LOCK, 4)) {
+               printk("DUMB: espacio de memoria en uso: SYS_SW_LOCK\n");
+               return -EBUSY;
+       }
+	printk ("hola hola hola hola");
+	
+
+       if(check_mem_region(ADC_CLK_DIV, 4)) {
+               printk("DUMB: espacio de memoria en uso: ADC_CLK_DIV\n");
+               return -EBUSY;
+       }
+	printk ("hola2 hola2 hola2 hola2");
+	
+
+ 	if(check_mem_region(DEVICE_CFG, 4)) {
+               printk("DUMB: espacio de memoria en uso: DEVICE_CFG\n");
+               return -EBUSY;
+       }
+
+
+       if(check_mem_region(ADC_RESULT, 4)) {
+               printk("DUMB: espacio de memoria en uso: ADC_RESULT\n");
+               return -EBUSY;
+       }
+ 	if(check_mem_region(ADC_SWITCH, 4)) {
+               printk("DUMB: espacio de memoria en uso: ADC_SWITCH\n");
+               return -EBUSY;
+       }
+
+
+       if(check_mem_region(ADC_SW_LOCK, 4)) {
+               printk("DUMB: espacio de memoria en uso: ADC_SW_LOCK\n");
+               return -EBUSY;
+       }
+	
+	//Tomar memoria
+
+	 request_mem_region(SYS_SW_LOCK, 4, "sys_sw_lock");
+	 sys_sw_lock = __ioremap(SYS_SW_LOCK, 4, 0);
+
+	 request_mem_region(ADC_CLK_DIV, 4, "adc_clk_div");
+	 adc_clk_div = __ioremap(ADC_CLK_DIV, 1, 0);
+
+	 request_mem_region(DEVICE_CFG, 4, "device_cfg");
+	 device_cfg = __ioremap(DEVICE_CFG, 4, 0);
+
+	 request_mem_region(ADC_RESULT, 4, "adc_result");
+	 adc_result = __ioremap(ADC_RESULT, 4, 0);
+
+	 request_mem_region(ADC_SWITCH, 4, "adc_switch");
+	 adc_switch = __ioremap(ADC_SWITCH, 4, 0);
+
+	 request_mem_region(ADC_SW_LOCK, 4, "adc_sw_lock");
+	 adc_sw_lock = __ioremap(ADC_SW_LOCK, 4, 0);
+
+	 printk("dumb: sys_sw_lock remap = %p\n", sys_sw_lock);
+	 printk("dumb: adc_clk_div remap = %p\n", adc_clk_div);
+	 printk("dumb: device_cfg remap = %p\n", device_cfg);
+	 printk("dumb: adc_result remap = %p\n", adc_result);
+	 printk("dumb: adc_switch remap = %p\n", adc_switch);
+	 printk("dumb: adc_sw_lock remap = %p\n", adc_sw_lock);
+
+	//Configura registros
+
+	*adc_sw_lock = 0x000000AA;
+	*adc_clk_div |= 0x80000000;
+	*sys_sw_lock = 0x000000AA;
+	*device_cfg |= 0x00020000;
+	*sys_sw_lock = 0x000000AA;
+	*device_cfg &= 0xFFFFFFFB;
+	*adc_sw_lock = 0x000000AA;
+	*adc_switch = 0x00000608;
+
+/**
+	//*((volatile unsigned int *)(SYS_SW_LOCK)) = 0xAA;   //desbloqueo software
+	*((volatile unsigned int *)(ADC_SW_LOCK)) = 0xAA;
+	//*((volatile unsigned int *)(ADC_CLK_DIV)) = 0x80000000; //reloj dividido por 16
+	*((volatile unsigned int *)(ADC_CLK_DIV)) |= 0x80000000 ;
+	*((volatile unsigned int *)(SYS_SW_LOCK)) = 0xAA;
+	//*((volatile unsigned int *)(DEVICE_CFG)) = 0x00020000; //activar ADC	
+	*((volatile unsigned int *)(DEVICE_CFG)) | 0x00020000; //ADCEN a "1"
+	*((volatile unsigned int *)(SYS_SW_LOCK)) = 0xAA;
+	*((volatile unsigned int *)(DEVICE_CFG)) & 0xFFFFFFFB; //ADCPD a "0"
+	*((volatile unsigned int *)(ADC_SW_LOCK)) = 0xAA;  
+	*((volatile unsigned int *)(ADC_SWITCH)) = 0x00000608; //ADC0 pin 27
+	//*((volatile unsigned int *)(ADC_INT_EN)) = 0x00000000;     //desactivar interrupciones
+**/
+	printk("<1>adc init done\n");
+  
+	return 0;
+}
+
+//------------------------------------------------------
+// int reg_release(struct inode *inode, struct file *filep)
+//
+// Descripción:
+// 	Función para cerrar	
+//	 
+//------------------------------------------------------
+int 
+reg_release(struct inode *inode, struct file *filep)
+{ 
+	MOD_DEC_USE_COUNT;   //para "decir" que dejo de usarlo
+	release_mem_region(SYS_SW_LOCK, 4);
+	release_mem_region(ADC_CLK_DIV, 4);
+	release_mem_region(DEVICE_CFG, 4);
+	release_mem_region(ADC_RESULT, 4);
+	release_mem_region(ADC_SWITCH, 4);
+	release_mem_region(ADC_SW_LOCK, 4);
+	printk("<1>Closing adc\n");
+	return 0;
+}
+
+//------------------------------------------------------
+// ssize_t reg_read(struct file *filep, char *buf, size_t count, loff_t *f_pos)
+//
+// Descripción:
+// 	Función para leer. Los drivers se comunican mediante char.	
+//	 
+//------------------------------------------------------
+ssize_t 
+reg_read(struct file *filep, char *buf, size_t count, loff_t *f_pos)
+{
+  while((*adc_result) < 0x80000000){
+	}
+	int lectura;
+	lectura= *((volatile unsigned int *)(ADC_RESULT));
+	//Divide en 2 "char"
+	buf[0]=(char)(lectura & 0x00FF);
+	buf[1]=(char)((lectura>>8)&0x000F);
+	printk("\n %x, %x, %x",lectura,buf[1],buf[0]);
+	return 0;
+}
+
+//------------------------------------------------------
+// ssize_t reg_write(struct file *filep, const char *buf, size_t count, loff_t *f_pos)
+//
+// Descripción:
+// 	Función para escribir (en el adc no se escribe)	
+//	 
+//------------------------------------------------------
+ssize_t 
+reg_write(struct file *filep, const char *buf, size_t count, loff_t *f_pos)
+{
+	return 0;
+}
+
+//struct para definir operaciones
+struct file_operations reg_fops = {
+        read: reg_read,
+        write: reg_write,
+        open: reg_open,
+        release: reg_release
+};
+
+
+//------------------------------------------------------
+// void my_init(void)
+//
+// Descripción:
+// 	Función para registrar el driver	
+//	
+//------------------------------------------------------
+int my_init(void){
+	int result;
+
+	printk("<1>ADC!\n");
+	result = register_chrdev(ADC_MAJOR_NUMBER, "adc", &reg_fops);
+	if(result<0){
+		printk("<1>Fail major number %d\n", ADC_MAJOR_NUMBER);
+		return result;
+	}
+  
+  //check_region(REG_ADDR, 1);
+	printk("<1>ADC registrado!\n");
+ 	return 0;
+}
+
+//------------------------------------------------------
+// void my_end(void)
+//
+// Descripción:
+// 	Función para "desregistrar" el driver	
+//	 
+//------------------------------------------------------
+void my_end(void) {
+  //libera el MAJOR NUMBER
+	unregister_chrdev(ADC_MAJOR_NUMBER, "adc");
+        
+  //Unlock access to register
+  //release_region(REG_ADDR, 1);
+	printk("<1>Cierro ADC!");
+}
+
+module_init(my_init);
+module_exit(my_end);
